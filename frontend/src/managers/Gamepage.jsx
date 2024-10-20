@@ -1,165 +1,129 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
+// import "./App.css";
 
-const gridSize = 5;
-const maxParticles = 4;
+const GRID_SIZE = 5;
+const MAX_PARTICLES = 4;
+const TARGET_SCORE = 10;
 
-const App = () => {
-  // Initial state
-  const [grid, setGrid] = useState(initializeGrid());
-  const [currentPlayer, setCurrentPlayer] = useState(1);
-  const [scores, setScores] = useState({ p1: 0, p2: 0 });
-  const [gameEnded, setGameEnded] = useState(false);
+const createGrid = () =>
+  Array(GRID_SIZE)
+    .fill(null)
+    .map(() =>
+      Array(GRID_SIZE).fill({ count: 0, owner: null })
+    );
 
-  // Initialize grid
-  function initializeGrid() {
-    let initialGrid = [];
-    for (let i = 0; i < gridSize; i++) {
-      let row = [];
-      for (let j = 0; j < gridSize; j++) {
-        row.push({ particles: 0, owner: null });
+function App() {
+  const [grid, setGrid] = useState(createGrid);
+  const [turn, setTurn] = useState("red"); // "red" for player 1, "blue" for player 2
+  const [scores, setScores] = useState({ red: 0, blue: 0 });
+
+  // Add particle and handle collapse/chain reactions
+  const addParticle = (row, col) => {
+    const newGrid = JSON.parse(JSON.stringify(grid));
+
+    // Only allow adding if the square is neutral or owned by the current player
+    if (newGrid[row][col].owner === null || newGrid[row][col].owner === turn) {
+      newGrid[row][col].count++;
+      newGrid[row][col].owner = turn;
+
+      if (newGrid[row][col].count === MAX_PARTICLES) {
+        collapseSquare(newGrid, row, col);
       }
-      initialGrid.push(row);
-    }
-    return initialGrid;
-  }
 
-  // Handle square click
-  const handleSquareClick = (row, col) => {
-    if (gameEnded) return;
-
-    const square = grid[row][col];
-
-    // Only allow moves on empty squares or squares owned by the current player
-    if (square.owner === null || square.owner === currentPlayer) {
-      const newGrid = [...grid];
-      addParticle(newGrid, row, col);
-    } else {
-      alert("You can only place particles on empty squares or your own squares!");
-    }
-  };
-
-  // Add particle to the square
-  const addParticle = (newGrid, row, col) => {
-    const square = newGrid[row][col];
-    square.particles++;
-    square.owner = currentPlayer; // Change ownership to current player if it was empty
-
-    // Check for collapse
-    if (square.particles >= maxParticles) {
-      collapseSquare(newGrid, row, col);
-    } else {
-      // Update grid
       setGrid(newGrid);
-      switchPlayer();
+      setTurn(turn === "red" ? "blue" : "red");
     }
   };
 
-  // Handle square collapse
-  const collapseSquare = (newGrid, row, col) => {
-    const square = newGrid[row][col];
-    square.particles = 0; // Reset particles
-    square.owner = null;  // Reset ownership
+  // Handle collapse and redistribution of particles
+  const collapseSquare = (grid, row, col) => {
+    const owner = grid[row][col].owner;
+    grid[row][col].count = 0; // Reset count
+    grid[row][col].owner = null; // Neutralize the square
+    setScores((prevScores) => ({
+      ...prevScores,
+      [owner]: prevScores[owner] + 1, // Add point to the owner of the collapsed square
+    }));
 
-    // Update player score
-    const newScores = { ...scores };
-    newScores[`p${currentPlayer}`]++;
-    setScores(newScores);
+    const adjacentSquares = getAdjacentSquares(row, col);
+    adjacentSquares.forEach(([r, c]) => {
+      grid[r][c].count++;
+      
+      // Only change ownership if the square was neutral before
+      if (grid[r][c].owner === null) {
+        grid[r][c].owner = owner;
+      }
 
-    // Redistribute particles to adjacent squares
-    redistributeParticles(newGrid, row, col);
-
-    // Update grid
-    setGrid(newGrid);
-
-    // Check for game end
-    if (newScores.p1 >= 10 || newScores.p2 >= 10) {
-      setGameEnded(true);
-    } else {
-      switchPlayer();
-    }
-  };
-
-  // Redistribute particles
-  const redistributeParticles = (newGrid, row, col) => {
-    const adjacent = [
-      [row - 1, col], // up
-      [row + 1, col], // down
-      [row, col - 1], // left
-      [row, col + 1]  // right
-    ];
-
-    adjacent.forEach(([r, c]) => {
-      if (r >= 0 && r < gridSize && c >= 0 && c < gridSize) {
-        const adjacentSquare = newGrid[r][c];
-        adjacentSquare.particles++;
-
-        // If the adjacent square is owned by the opponent, do not change ownership
-        if (adjacentSquare.owner === null || adjacentSquare.owner === currentPlayer) {
-          adjacentSquare.owner = currentPlayer;
-        }
-
-        // Check for chain reactions
-        if (adjacentSquare.particles >= maxParticles) {
-          collapseSquare(newGrid, r, c);
-        }
+      // Trigger chain reaction if adjacent square also collapses
+      if (grid[r][c].count >= MAX_PARTICLES) {
+        collapseSquare(grid, r, c);
       }
     });
   };
 
-  // Switch player turn
-  const switchPlayer = () => {
-    setCurrentPlayer(currentPlayer === 1 ? 2 : 1);
+  // Get adjacent squares for particle redistribution
+  const getAdjacentSquares = (row, col) => {
+    const adjacent = [];
+    if (row > 0) adjacent.push([row - 1, col]); // up
+    if (row < GRID_SIZE - 1) adjacent.push([row + 1, col]); // down
+    if (col > 0) adjacent.push([row, col - 1]); // left
+    if (col < GRID_SIZE - 1) adjacent.push([row, col + 1]); // right
+    return adjacent;
   };
 
-  // Reset the game
-  const resetGame = () => {
-    setGrid(initializeGrid());
-    setScores({ p1: 0, p2: 0 });
-    setCurrentPlayer(1);
-    setGameEnded(false);
+  // Check if a player has won
+  const checkWinCondition = () => {
+    if (scores.red >= TARGET_SCORE) return "Player 1 (Red) Wins!";
+    if (scores.blue >= TARGET_SCORE) return "Player 2 (Blue) Wins!";
+    return null;
   };
+
+  const winner = checkWinCondition();
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
-      <h1 className="text-3xl font-bold mb-6">Quantum Squares</h1>
+    <div className="flex flex-col items-center p-4">
+      <h1 className="text-3xl font-bold mb-4">Quantum Squares</h1>
 
+      {/* Display current turn */}
+      <div className="mb-2">
+        <span className={`font-bold ${turn === "red" ? "text-red-500" : "text-blue-500"}`}>
+          {turn === "red" ? "Player 1 (Red)" : "Player 2 (Blue)"}'s Turn
+        </span>
+      </div>
+
+      {/* Display the grid */}
       <div className="grid grid-cols-5 gap-2">
-        {grid.map((row, rowIndex) => (
-          row.map((square, colIndex) => (
+        {grid.map((row, rowIndex) =>
+          row.map((cell, colIndex) => (
             <div
               key={`${rowIndex}-${colIndex}`}
-              className={`w-20 h-20 flex items-center justify-center text-2xl font-bold cursor-pointer border-2 ${
-                square.owner === 1 ? 'bg-red-500 text-white' : square.owner === 2 ? 'bg-blue-500 text-white' : 'bg-white'
-              }`}
-              onClick={() => handleSquareClick(rowIndex, colIndex)}
+              className={`w-16 h-16 border flex items-center justify-center text-xl font-bold cursor-pointer 
+                ${cell.owner === "red" ? "bg-red-300 text-red-700" : cell.owner === "blue" ? "bg-blue-300 text-blue-700" : "bg-gray-200"}`}
+              onClick={() => !winner && addParticle(rowIndex, colIndex)}
             >
-              {square.particles}
+              {cell.count}
             </div>
           ))
-        ))}
+        )}
       </div>
 
-      <div className="mt-6 text-lg">
-        {gameEnded
-          ? `Game Over! Player ${scores.p1 >= 10 ? 1 : 2} Wins!`
-          : `Player ${currentPlayer}'s Turn`}
+      {/* Display the score */}
+      <div className="mt-4">
+        <h2 className="text-2xl">Scores</h2>
+        <div className="flex justify-around w-full text-lg">
+          <span className="text-red-500">Red: {scores.red}</span>
+          <span className="text-blue-500">Blue: {scores.blue}</span>
+        </div>
       </div>
 
-      <div className="mt-4 flex space-x-8">
-        <div>Player 1 Score: {scores.p1}</div>
-        <div>Player 2 Score: {scores.p2}</div>
-      </div>
-
-      {gameEnded && (
-        <button
-          onClick={resetGame}
-          className="mt-6 px-6 py-2 bg-green-500 text-white rounded hover:bg-green-700"
-        >
-          Restart Game
-        </button>
+      {/* Display the winner */}
+      {winner && (
+        <div className="mt-4 text-2xl font-bold text-green-500">
+          {winner}
+        </div>
       )}
     </div>
   );
-};
+}
 
 export default App;
