@@ -1,3 +1,7 @@
+## Overview about the making of this project
+
+This project was a part of the CodeRapido hackathon, a 200 minute hackathon, conducted by IIT Dhanbad, where we had to make an interactive game, which includes logic as well as engaging UI under 200 minutes. A total of 100 participants took part in the contest, and my team emerged as the winner of this contest.
+
 # Quantum Squares
 
 Quantum Squares is a turn-based strategy game played on a 5x5 grid. Players take turns adding quantum particles to squares in an effort to control the grid. The game involves particle accumulation and the strategic use of square collapses, which can trigger chain reactions and shift control between players.
