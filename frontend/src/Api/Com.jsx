@@ -1,4 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import red from "../assets/red.png";
+import blue from "../assets/blue.png";
+import clickS from "../assets/click.mp3";
+import boomS from "../assets/boom.mp3";
+import winS from "../assets/win.mp3";
 import { toast, Toaster } from "react-hot-toast";
 import { useLocation } from "react-router-dom";
 
@@ -17,21 +22,26 @@ function getRandomMove(grid, username) {
 }
 
 function Com() {
-  const [turn, setTurn] = useState(0); // Track turn by index
-  const [scores, setScores] = useState({}); // Scores for each player
+  const [turn, setTurn] = useState(0); // Track turn (0: Player, 1: AI)
+  const [scores, setScores] = useState({}); // Scores for player and AI
   const location = useLocation();
+  const { gridSize } = location.state || {}; // Grid size passed via router state
 
-  const { gridSize } = location.state || {};
-
-  const [gridSize1, setgridSize1] = useState(gridSize); // Default grid size
-  const [username, setUsername] = useState(""); // Store player's username
-  const [usernames, setUsernames] = useState([]); // List of players (player + AI)
+  const [gridSize1] = useState(gridSize); // Fixed grid size
+  const [username, setUsername] = useState(""); // Player's username
   const [grid, setGrid] = useState([]);
   const [gameStarted, setGameStarted] = useState(false);
+  const usernames = [username, "AI"]; // Usernames array: [Player, AI]
 
-  const MAX_PARTICLES = 4;
-  const TARGET_SCORE = 10;
+  // Sound effects
+  const clickSound = useRef(new Audio(clickS));
+  const boomSound = useRef(new Audio(boomS));
+  const winSound = useRef(new Audio(winS));
 
+  const MAX_PARTICLES = 4; // Max particles in a square
+  const TARGET_SCORE = 10; // Score required to win
+
+  // Create an empty grid
   const createGrid = () =>
     Array(gridSize1)
       .fill(null)
@@ -39,88 +49,86 @@ function Com() {
         Array(gridSize1).fill({ count: 0, owner: null })
       );
 
-  // Initialize scores based on number of players
+  // Initialize grid and scores when game starts
   useEffect(() => {
-    if (usernames.length > 0) {
-      const initialScores = {};
-      usernames.forEach((user) => {
-        initialScores[user] = 0; // Set initial score for each player
-      });
+    if (gameStarted) {
+      const initialScores = { [username]: 0, AI: 0 };
       setScores(initialScores);
-      setGrid(createGrid()); // Create grid when game starts
+      setGrid(createGrid());
     }
-  }, [usernames, gridSize1]);
+  }, [gameStarted]);
 
-  // AI makes its move
+  // AI makes its move when it's their turn
   useEffect(() => {
-    if (gameStarted && usernames[turn] === "AI") {
+    if (gameStarted && turn === 1) {
       setTimeout(() => {
         const move = getRandomMove(grid, "AI");
         if (move) {
           addParticle(move[0], move[1]);
         }
-      }, 1000); // AI makes a move after 1 second
+      }, 1000);
     }
-  }, [turn, grid, gameStarted, usernames]);
+  }, [turn, grid, gameStarted]);
 
-  // Add particle and handle collapse/chain reactions
+  // Add a particle to the grid and handle the turn
   const addParticle = (row, col) => {
     const newGrid = JSON.parse(JSON.stringify(grid));
 
-    // Only allow adding if the square is neutral or owned by the current player
     if (newGrid[row][col].owner === null || newGrid[row][col].owner === usernames[turn]) {
       newGrid[row][col].count++;
       newGrid[row][col].owner = usernames[turn];
+      clickSound.current.play();
 
       if (newGrid[row][col].count === MAX_PARTICLES) {
+        boomSound.current.play();
         collapseSquare(newGrid, row, col);
       }
 
       setGrid(newGrid);
-      setTurn((turn + 1) % 2); // Cycle between player and AI
+      setTurn((turn + 1) % 2); // Switch turn between player (0) and AI (1)
     }
   };
 
-  // Handle collapse and redistribution of particles
+  // Handle square collapse and redistribution of particles
   const collapseSquare = (grid, row, col) => {
     const owner = grid[row][col].owner;
     grid[row][col].count = 0; // Reset count
     grid[row][col].owner = null; // Neutralize the square
+
     setScores((prevScores) => ({
       ...prevScores,
-      [owner]: prevScores[owner] + 1, // Add point to the owner of the collapsed square
+      [owner]: prevScores[owner] + 1, // Award points for collapsed square
     }));
 
     const adjacentSquares = getAdjacentSquares(row, col);
     adjacentSquares.forEach(([r, c]) => {
       grid[r][c].count++;
-
-      // Only change ownership if the square was neutral before
       if (grid[r][c].owner === null) {
         grid[r][c].owner = owner;
       }
-
-      // Trigger chain reaction if adjacent square also collapses
       if (grid[r][c].count >= MAX_PARTICLES) {
-        collapseSquare(grid, r, c);
+        collapseSquare(grid, r, c); // Trigger chain reaction
       }
     });
   };
 
-  // Get adjacent squares for particle redistribution
+  // Get adjacent squares for redistribution
   const getAdjacentSquares = (row, col) => {
     const adjacent = [];
-    if (row > 0) adjacent.push([row - 1, col]); // up
-    if (row < gridSize1 - 1) adjacent.push([row + 1, col]); // down
-    if (col > 0) adjacent.push([row, col - 1]); // left
-    if (col < gridSize1 - 1) adjacent.push([row, col + 1]); // right
+    if (row > 0) adjacent.push([row - 1, col]); // Up
+    if (row < gridSize1 - 1) adjacent.push([row + 1, col]); // Down
+    if (col > 0) adjacent.push([row, col - 1]); // Left
+    if (col < gridSize1 - 1) adjacent.push([row, col + 1]); // Right
     return adjacent;
   };
 
-  // Check if a player has won
+  // Check for a win condition
   const checkWinCondition = () => {
     for (let player of usernames) {
-      if (scores[player] >= TARGET_SCORE) return `${player} Wins!`;
+      if (scores[player] >= TARGET_SCORE) {
+        winSound.current.play();
+        return `${player} Wins!`;
+      }
     }
     return null;
   };
@@ -129,11 +137,16 @@ function Com() {
 
   const startGame = () => {
     if (username.trim()) {
-      setUsernames([username.trim(), "AI"]); // Player and AI
       setGameStarted(true);
     } else {
       toast.error("Please enter a valid username");
     }
+  };
+
+  const getImage = (owner) => {
+    if (owner === usernames[0]) return red;
+    if (owner === usernames[1]) return blue;
+    return null;
   };
 
   return (
@@ -159,45 +172,46 @@ function Com() {
       ) : (
         <>
           <h1 className="text-3xl font-bold mb-4">Quantum Squares</h1>
-
-          {/* Display current turn */}
           <div className="mb-2">
-            <span
-              className={`font-bold ${
-                turn === 0 ? "text-red-500" : "text-blue-500"
-              }`}
-            >
+            <span className={`font-bold ${turn === 0 ? "text-red-500" : "text-blue-500"}`}>
               {usernames[turn]}'s Turn
             </span>
           </div>
-
-          {/* Display the grid */}
           <div
             className={`grid grid-cols-${gridSize1} gap-2`}
+            style={{ gridTemplateColumns: `repeat(${gridSize1}, 1fr)` }}
           >
             {grid.map((row, rowIndex) =>
               row.map((cell, colIndex) => (
                 <div
                   key={`${rowIndex}-${colIndex}`}
-                  className={`w-16 h-16 border flex items-center justify-center text-xl font-bold cursor-pointer
-                    ${
-                      cell.owner === usernames[0]
-                        ? "bg-red-300 text-red-700"
-                        : cell.owner === usernames[1]
-                        ? "bg-blue-300 text-blue-700"
-                        : "bg-gray-200"
-                    }`}
+                  className={`w-16 h-16 border flex items-center justify-center text-xl font-bold cursor-pointer ${
+                    cell.owner === usernames[0]
+                      ? "bg-red-300"
+                      : cell.owner === usernames[1]
+                      ? "bg-blue-300"
+                      : "bg-gray-200"
+                  }`}
                   onClick={() =>
-                    !winner && usernames[turn] !== "AI" && addParticle(rowIndex, colIndex)
+                    !winner && usernames[turn] === username && addParticle(rowIndex, colIndex)
                   }
                 >
-                  {cell.count}
+                  {cell.count > 0 && (
+                    <div className="flex flex-wrap justify-center items-center">
+                      {Array.from({ length: cell.count }).map((_, index) => (
+                        <img
+                          key={index}
+                          src={getImage(cell.owner)}
+                          alt={cell.owner}
+                          className="h-6 w-6 m-0.5"
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))
             )}
           </div>
-
-          {/* Display the score */}
           <div className="mt-4">
             <h2 className="text-2xl">Scores</h2>
             <div className="flex justify-around w-full text-lg">
@@ -211,12 +225,8 @@ function Com() {
               ))}
             </div>
           </div>
-
-          {/* Display the winner */}
           {winner && (
-            <div className="mt-4 text-2xl font-bold text-green-500">
-              {winner}
-            </div>
+            <div className="mt-4 text-2xl font-bold text-green-500">{winner}</div>
           )}
         </>
       )}
